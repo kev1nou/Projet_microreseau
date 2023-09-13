@@ -1,0 +1,60 @@
+
+#include "mcc_generated_files/mcc.h"
+
+
+uint8_t flag_500ms = 0;
+uint8_t flag_100ms = 0;
+uint16_t lecture;
+uint8_t vitesse_vent;
+uint16_t resultat = 0;
+
+void interrupt_500ms(void) {
+    flag_500ms = 1;
+}
+
+void interrupt_100ms(void) {
+    flag_100ms = 1;
+}
+
+void main(void) {
+    // Initialize the device
+    SYSTEM_Initialize();
+
+    // Enable the Global Interrupts
+    INTERRUPT_GlobalInterruptEnable();
+    // Enable the Peripheral Interrupts
+    INTERRUPT_PeripheralInterruptEnable();
+    TMR0_SetInterruptHandler(interrupt_500ms);
+    TMR1_SetInterruptHandler(interrupt_100ms);
+    uCAN_MSG txCan;
+
+    txCan.frame.id = 0x140;
+    txCan.frame.dlc = 2;
+    txCan.frame.data0 = 0;
+    txCan.frame.data1 = 0;
+
+    uCAN_MSG tx_protection;
+
+    tx_protection.frame.id = 0x100;
+    tx_protection.frame.dlc = 1;
+    tx_protection.frame.data0 = 0xFF;
+
+
+    while (1) {
+        lecture = ADC_GetConversion(channel_AN0);
+        lecture = ((float) lecture * 401) / 4095;
+        txCan.frame.data0 = (lecture >> 8) & 0xFF;
+        txCan.frame.data1 = lecture & 0xFF;
+        resultat = (txCan.frame.data0 << 8) + txCan.frame.data1;
+
+        if (flag_500ms == 1) {
+            IO_RA5_Toggle();
+            CAN_transmit(&txCan);
+            flag_500ms = 0;
+        }
+        else if (resultat >= 250 && flag_100ms == 1) {
+            CAN_transmit(&tx_protection);
+            flag_100ms = 0;
+        }
+    }
+}
